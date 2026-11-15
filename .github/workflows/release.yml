@@ -1,0 +1,32 @@
+name: Publish Vellune APKs
+on:
+  push:
+    branches: ['publish/v*']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish both APKs with their release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          phone=(Vellune-v*-android-arm64.apk)
+          version=${phone[0]#Vellune-}
+          version=${version%-android-arm64.apk}
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]
+          emulator="Vellune-$version-android-x86_64.apk"
+          test -s "${phone[0]}" && test -s "$emulator" && test -s RELEASE_NOTES.md
+          if gh release view "$version" >/dev/null 2>&1; then
+            # A published version is immutable. A rerun can finish an interrupted draft.
+            if [[ "$(gh release view "$version" --json isDraft --jq .isDraft)" == true ]]; then
+              gh release upload "$version" "${phone[0]}" "$emulator" --clobber
+              gh release edit "$version" --draft=false --latest
+            fi
+          else
+            gh release create "$version" "${phone[0]}" "$emulator" --target main --title "Vellune $version" --notes-file RELEASE_NOTES.md --latest
+          fi
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$GITHUB_REF_NAME"
